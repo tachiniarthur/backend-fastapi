@@ -1,0 +1,72 @@
+# ========================
+# Ambiente virtual Python
+# ========================
+venv/
+.venv/
+env/
+.env/
+
+# ========================
+# Variáveis de ambiente
+# ========================
+.env
+
+# ========================
+# Banco de dados local
+# ========================
+*.sqlite
+*.sqlite3
+*.db
+
+# ========================
+# Python cache / bytecode
+# ========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+
+# ========================
+# Distribuição / Build
+# ========================
+dist/
+build/
+*.egg-info/
+*.egg
+
+# ========================
+# IDE / Editores
+# ========================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.kiro/
+
+# ========================
+# Sistema operacional
+# ========================
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# ========================
+# Testes / Cobertura
+# ========================
+.coverage
+htmlcov/
+.pytest_cache/
+.tox/
+.nox/
+
+# ========================
+# Logs
+# ========================
+*.log
+
+# ========================
+# Storage (uploads)
+# ========================
+storage/products/*
+!storage/products/.gitkeep

@@ -1,0 +1,10 @@
+[run]
+source = app
+omit =
+    venv/*
+    alembic/*
+    JuniorPlenoTests/*
+    app/config.py
+
+[report]
+show_missing = true

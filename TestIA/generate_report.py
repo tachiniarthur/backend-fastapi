@@ -215,7 +215,7 @@ def generate_pdf(data: ReportData, output_path: str) -> None:
     resource_data = [
         ["Métrica", "Valor"],
         ["Tempo de CPU", f"{data.cpu_time:.2f}s"],
-        ["Uso de Memória", f"{data.memory_mb:.1f} MB"],
+        ["Pico de Memória", f"{data.memory_mb:.1f} MB"],
     ]
     resource_table = Table(resource_data, colWidths=[10 * cm, 6 * cm])
     resource_table.setStyle(_make_table_style("#e67e22"))
@@ -321,8 +321,12 @@ def main():
         date=today,
     )
 
-    # Gerar PDF
-    output_path = os.path.join(base_dir, f"relatorio_{today}.pdf")
+    # Gerar PDF com número de execução incremental
+    import glob
+    suite_name = "ia"
+    existing = glob.glob(os.path.join(base_dir, f"relatorio_{suite_name}_{today}_*.pdf"))
+    run_number = len(existing) + 1
+    output_path = os.path.join(base_dir, f"relatorio_{suite_name}_{today}_{run_number}.pdf")
     generate_pdf(report_data, output_path)
     print(f"Relatório PDF gerado com sucesso: {output_path}")
 

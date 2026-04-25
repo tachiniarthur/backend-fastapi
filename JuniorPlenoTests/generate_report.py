@@ -39,6 +39,9 @@ class ReportData:
     memory_mb: float = 0.0
     covered_lines: int = 0
     total_lines: int = 0
+    per_module_coverage: dict = field(default_factory=dict)
+    top_covered: list = field(default_factory=list)
+    least_covered: list = field(default_factory=list)
     date: str = field(default_factory=lambda: datetime.now().strftime("%Y-%m-%d"))
 
 
@@ -155,6 +158,68 @@ def generate_pdf(data: ReportData, output_path: str) -> None:
     )
     elements.append(coverage_table)
     elements.append(Spacer(1, 12))
+
+    # --- Seção 2b: Cobertura por Módulo ---
+    if data.per_module_coverage:
+        elements.append(Paragraph("Cobertura por Módulo", section_style))
+        mod_rows = [["Módulo", "Cobertura", "Linhas Cobertas / Total"]]
+        for module, pct in sorted(data.per_module_coverage.items()):
+            mod_rows.append([module.capitalize(), f"{pct:.1f}%", ""])
+        mod_table = Table(mod_rows, colWidths=[6 * cm, 4 * cm, 6 * cm])
+        mod_table.setStyle(
+            TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#8e44ad")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#ecf0f1")]),
+                ("PADDING", (0, 0), (-1, -1), 6),
+            ])
+        )
+        elements.append(mod_table)
+        elements.append(Spacer(1, 12))
+
+    # --- Seção 2c: Arquivos com Maior/Menor Cobertura ---
+    if data.top_covered:
+        elements.append(Paragraph("Arquivos com Maior Cobertura", section_style))
+        top_rows = [["Arquivo", "Cobertura"]]
+        for fname, pct in data.top_covered:
+            top_rows.append([fname, f"{pct:.1f}%"])
+        top_table = Table(top_rows, colWidths=[10 * cm, 6 * cm])
+        top_table.setStyle(
+            TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#27ae60")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#ecf0f1")]),
+                ("PADDING", (0, 0), (-1, -1), 6),
+            ])
+        )
+        elements.append(top_table)
+        elements.append(Spacer(1, 12))
+
+    if data.least_covered:
+        elements.append(Paragraph("Arquivos com Menor Cobertura", section_style))
+        least_rows = [["Arquivo", "Cobertura"]]
+        for fname, pct in data.least_covered:
+            least_rows.append([fname, f"{pct:.1f}%"])
+        least_table = Table(least_rows, colWidths=[10 * cm, 6 * cm])
+        least_table.setStyle(
+            TableStyle([
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e74c3c")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#ecf0f1")]),
+                ("PADDING", (0, 0), (-1, -1), 6),
+            ])
+        )
+        elements.append(least_table)
+        elements.append(Spacer(1, 12))
 
     # --- Seção 3: Resultados dos Testes ---
     elements.append(Paragraph("Resultados dos Testes", section_style))
@@ -273,6 +338,50 @@ def main():
     covered_lines = totals.get("covered_lines", 0)
     total_lines = totals.get("num_statements", 0)
 
+    # Cobertura por arquivo (raw)
+    per_file_coverage = {}
+    files_coverage = coverage_data.get("files", {})
+    for filepath, file_data in files_coverage.items():
+        summary_f = file_data.get("summary", {})
+        per_file_coverage[filepath] = {
+            "pct": summary_f.get("percent_covered", 0.0),
+            "covered": summary_f.get("covered_lines", 0),
+            "total": summary_f.get("num_statements", 0),
+        }
+
+    # Cobertura por domínio (módulo de negócio)
+    MODULE_KEYWORDS = {
+        "auth":    ["auth"],
+        "user":    ["user"],
+        "product": ["product"],
+        "cart":    ["cart"],
+        "order":   ["order"],
+        "admin":   ["admin"],
+    }
+
+    def _classify_module(filepath: str) -> str:
+        normalized = filepath.replace("\\", "/").lower()
+        for module, keywords in MODULE_KEYWORDS.items():
+            if any(kw in normalized for kw in keywords):
+                return module
+        return "outros"
+
+    module_covered: dict = {}
+    module_total: dict = {}
+    for filepath, info in per_file_coverage.items():
+        mod = _classify_module(filepath)
+        module_covered[mod] = module_covered.get(mod, 0) + info["covered"]
+        module_total[mod] = module_total.get(mod, 0) + info["total"]
+
+    per_module_coverage = {
+        mod: (module_covered[mod] / module_total[mod] * 100) if module_total.get(mod, 0) > 0 else 0.0
+        for mod in sorted(module_covered.keys())
+    }
+
+    sorted_files = sorted(per_file_coverage.items(), key=lambda x: x[1]["pct"], reverse=True)
+    top_covered = [(fp, info["pct"]) for fp, info in sorted_files[:5]] if sorted_files else []
+    least_covered = [(fp, info["pct"]) for fp, info in sorted_files[-5:][::-1]] if len(sorted_files) > 5 else []
+
     # Extrair métricas de testes
     summary = test_results.get("summary", {})
     total_tests = summary.get("total", 0)
@@ -298,6 +407,9 @@ def main():
         avg_time=avg_time,
         cpu_time=cpu_time,
         memory_mb=memory_mb,
+        per_module_coverage=per_module_coverage,
+        top_covered=top_covered,
+        least_covered=least_covered,
         date=today,
     )
 

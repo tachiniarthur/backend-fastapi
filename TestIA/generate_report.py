@@ -264,21 +264,53 @@ def main():
     covered_lines = totals.get("covered_lines", 0)
     total_lines = totals.get("num_statements", 0)
 
-    # Cobertura por módulo
-    per_module_coverage = {}
+    # Cobertura por arquivo (raw)
+    per_file_coverage = {}
     files_coverage = coverage_data.get("files", {})
     for filepath, file_data in files_coverage.items():
         summary = file_data.get("summary", {})
-        pct = summary.get("percent_covered", 0.0)
-        per_module_coverage[filepath] = pct
+        covered = summary.get("covered_lines", 0)
+        total = summary.get("num_statements", 0)
+        per_file_coverage[filepath] = {
+            "pct": summary.get("percent_covered", 0.0),
+            "covered": covered,
+            "total": total,
+        }
 
-    # Top/least covered files
-    sorted_files = sorted(per_module_coverage.items(), key=lambda x: x[1], reverse=True)
-    top_covered = sorted_files[:5] if sorted_files else []
-    least_covered = sorted_files[-5:][::-1] if sorted_files else []
-    # Avoid overlap when few files
-    if len(sorted_files) <= 5:
-        least_covered = []
+    # Cobertura por domínio (módulo de negócio)
+    # Mapeia palavras-chave no caminho do arquivo para o nome do módulo
+    MODULE_KEYWORDS = {
+        "auth":    ["auth"],
+        "user":    ["user"],
+        "product": ["product"],
+        "cart":    ["cart"],
+        "order":   ["order"],
+        "admin":   ["admin"],
+    }
+
+    def _classify_module(filepath: str) -> str:
+        normalized = filepath.replace("\\", "/").lower()
+        for module, keywords in MODULE_KEYWORDS.items():
+            if any(kw in normalized for kw in keywords):
+                return module
+        return "outros"
+
+    module_covered: dict[str, int] = {}
+    module_total: dict[str, int] = {}
+    for filepath, info in per_file_coverage.items():
+        mod = _classify_module(filepath)
+        module_covered[mod] = module_covered.get(mod, 0) + info["covered"]
+        module_total[mod] = module_total.get(mod, 0) + info["total"]
+
+    per_module_coverage = {
+        mod: (module_covered[mod] / module_total[mod] * 100) if module_total.get(mod, 0) > 0 else 0.0
+        for mod in sorted(module_covered.keys())
+    }
+
+    # Top/least covered files (by raw file path)
+    sorted_files = sorted(per_file_coverage.items(), key=lambda x: x[1]["pct"], reverse=True)
+    top_covered = [(fp, info["pct"]) for fp, info in sorted_files[:5]] if sorted_files else []
+    least_covered = [(fp, info["pct"]) for fp, info in sorted_files[-5:][::-1]] if len(sorted_files) > 5 else []
 
     # Extrair métricas de testes (compatível com pytest-json-report)
     summary = test_results.get("summary", {})

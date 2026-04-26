@@ -181,10 +181,11 @@ def generate_pdf(data: ReportData, output_path: str) -> None:
     # --- Seção 4: Cobertura por Módulo ---
     if data.per_module_coverage:
         elements.append(Paragraph("Cobertura por Módulo", section_style))
-        mod_rows = [["Módulo", "Cobertura"]]
-        for module, pct in sorted(data.per_module_coverage.items()):
-            mod_rows.append([module, f"{pct:.1f}%"])
-        mod_table = Table(mod_rows, colWidths=[10 * cm, 6 * cm])
+        mod_rows = [["Módulo", "Cobertura", "Testes"]]
+        for module, value in sorted(data.per_module_coverage.items()):
+            pct, count = value if isinstance(value, tuple) else (value, 0)
+            mod_rows.append([module.capitalize(), f"{pct:.1f}%", str(count)])
+        mod_table = Table(mod_rows, colWidths=[7 * cm, 5 * cm, 4 * cm])
         mod_table.setStyle(_make_table_style("#8e44ad"))
         elements.append(mod_table)
         elements.append(Spacer(1, 12))
@@ -302,19 +303,30 @@ def main():
         module_covered[mod] = module_covered.get(mod, 0) + info["covered"]
         module_total[mod] = module_total.get(mod, 0) + info["total"]
 
+    # Count tests per module from pytest_results (classified by test nodeid)
+    module_test_count: dict[str, int] = {}
+
+    # Extrair métricas de testes (compatível com pytest-json-report)
+    summary = test_results.get("summary", {})
+    tests_list = test_results.get("tests", [])
+
+    for t in tests_list:
+        nodeid = t.get("nodeid", "").lower()
+        mod = _classify_module(nodeid)
+        module_test_count[mod] = module_test_count.get(mod, 0) + 1
+
     per_module_coverage = {
-        mod: (module_covered[mod] / module_total[mod] * 100) if module_total.get(mod, 0) > 0 else 0.0
-        for mod in sorted(module_covered.keys())
+        mod: (
+            (module_covered[mod] / module_total[mod] * 100) if module_total.get(mod, 0) > 0 else 0.0,
+            module_test_count.get(mod, 0),
+        )
+        for mod in sorted(set(list(module_covered.keys()) + list(module_test_count.keys())))
     }
 
     # Top/least covered files (by raw file path)
     sorted_files = sorted(per_file_coverage.items(), key=lambda x: x[1]["pct"], reverse=True)
     top_covered = [(fp, info["pct"]) for fp, info in sorted_files[:5]] if sorted_files else []
     least_covered = [(fp, info["pct"]) for fp, info in sorted_files[-5:][::-1]] if len(sorted_files) > 5 else []
-
-    # Extrair métricas de testes (compatível com pytest-json-report)
-    summary = test_results.get("summary", {})
-    tests_list = test_results.get("tests", [])
 
     # pytest-json-report: count from the tests array for accuracy
     if tests_list:

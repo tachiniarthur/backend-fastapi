@@ -162,9 +162,10 @@ def generate_pdf(data: ReportData, output_path: str) -> None:
     # --- Seção 2b: Cobertura por Módulo ---
     if data.per_module_coverage:
         elements.append(Paragraph("Cobertura por Módulo", section_style))
-        mod_rows = [["Módulo", "Cobertura", "Linhas Cobertas / Total"]]
-        for module, pct in sorted(data.per_module_coverage.items()):
-            mod_rows.append([module.capitalize(), f"{pct:.1f}%", ""])
+        mod_rows = [["Módulo", "Cobertura", "Testes"]]
+        for module, value in sorted(data.per_module_coverage.items()):
+            pct, count = value if isinstance(value, tuple) else (value, 0)
+            mod_rows.append([module.capitalize(), f"{pct:.1f}%", str(count)])
         mod_table = Table(mod_rows, colWidths=[6 * cm, 4 * cm, 6 * cm])
         mod_table.setStyle(
             TableStyle([
@@ -356,8 +357,9 @@ def main():
         "product": ["product"],
         "cart":    ["cart"],
         "order":   ["order"],
-        "admin":   ["admin"],
     }
+
+    EXCLUDED_MODULES = {"admin", "outros"}
 
     def _classify_module(filepath: str) -> str:
         normalized = filepath.replace("\\", "/").lower()
@@ -373,9 +375,21 @@ def main():
         module_covered[mod] = module_covered.get(mod, 0) + info["covered"]
         module_total[mod] = module_total.get(mod, 0) + info["total"]
 
+    # Count tests per module from pytest_results (classified by test nodeid)
+    module_test_count: dict = {}
+    tests_list = test_results.get("tests", [])
+    for t in tests_list:
+        nodeid = t.get("nodeid", "").lower()
+        mod = _classify_module(nodeid)
+        module_test_count[mod] = module_test_count.get(mod, 0) + 1
+
     per_module_coverage = {
-        mod: (module_covered[mod] / module_total[mod] * 100) if module_total.get(mod, 0) > 0 else 0.0
-        for mod in sorted(module_covered.keys())
+        mod: (
+            (module_covered[mod] / module_total[mod] * 100) if module_total.get(mod, 0) > 0 else 0.0,
+            module_test_count.get(mod, 0),
+        )
+        for mod in sorted(set(list(module_covered.keys()) + list(module_test_count.keys())))
+        if mod not in EXCLUDED_MODULES
     }
 
     sorted_files = sorted(per_file_coverage.items(), key=lambda x: x[1]["pct"], reverse=True)
@@ -384,9 +398,9 @@ def main():
 
     # Extrair métricas de testes
     summary = test_results.get("summary", {})
-    total_tests = summary.get("total", 0)
-    passed = summary.get("passed", 0)
-    failed = summary.get("failed", 0)
+    total_tests = len(tests_list) if tests_list else summary.get("total", 0)
+    passed = sum(1 for t in tests_list if t.get("outcome") == "passed") if tests_list else summary.get("passed", 0)
+    failed = sum(1 for t in tests_list if t.get("outcome") == "failed") if tests_list else summary.get("failed", 0)
     total_time = test_results.get("duration", 0.0)
     avg_time = total_time / total_tests if total_tests > 0 else 0.0
 
